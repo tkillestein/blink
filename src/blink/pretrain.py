@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+import wandb
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -99,6 +100,8 @@ def pretrain(
         datamodule=datamodule,
         weights_only=False,
     )
+
+    wandb.finish()
 
     if emit_metrics:
         return float(trainer.callback_metrics[emit_metrics].item())

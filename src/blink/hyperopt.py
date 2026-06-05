@@ -1,0 +1,104 @@
+from functools import partial
+from pathlib import Path
+
+import optuna
+from optuna import pruners, samplers
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
+from optuna_integration import PyTorchLightningPruningCallback
+
+from blink.config import (
+    AugmentationConfig,
+    CNNConfig,
+    DataConfig,
+    ExperimentConfig,
+    HardwareConfig,
+    JEPALossConfig,
+    LeJEPAPretrainConfig,
+    OptimizerConfig,
+)
+from blink.pretrain import pretrain
+
+MAX_EPOCHS = 50
+
+
+def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> float:
+
+    lightning_cb = PyTorchLightningPruningCallback(trial=trial, monitor=metric_to_trace)
+
+    weight_decay = trial.suggest_float("weight_decay", 1e-5, 0.05, log=True)
+    base_lr = trial.suggest_float("learning_rate", low=1e-5, high=1e-3, log=True)
+    batch_size = 2 ** trial.suggest_int("batch_size", 6, 10)
+    embedding_dim = 2 ** trial.suggest_int("embedding_dim", 6, 10)
+
+    optim = OptimizerConfig(
+        learning_rate=base_lr,
+        weight_decay=weight_decay,
+        max_epochs=MAX_EPOCHS,
+    )
+
+    backbone = CNNConfig(
+        model_name="convnext_atto",
+        embed_dim=embedding_dim,
+    )
+
+    data = DataConfig(
+        batch_size=batch_size,
+        data_dir=Path("/springbrook/share/physics/phsrcc/blink_data/hyperopt_test"),
+    )
+
+    loss = JEPALossConfig()
+
+    populated_config = LeJEPAPretrainConfig(
+        optim=optim,
+        backbone=backbone,
+        loss=loss,
+        data=data,
+        experiment=ExperimentConfig(),
+        aug=AugmentationConfig(),
+        hardware=HardwareConfig(device_type="gpu", precision="bf16-mixed"),
+    )
+
+    result = pretrain(
+        config=populated_config,
+        extra_callbacks=[lightning_cb],
+        emit_metrics=metric_to_trace,
+    )
+
+    if result is None:
+        msg = "Metrics not properly configured - try again."
+        raise RuntimeError(msg)
+
+    return result
+
+
+if __name__ == "__main__":
+    storage = JournalStorage(
+        JournalFileBackend(
+            file_path="/springbrook/share/physics/phsrcc/blink_data/hyperopt_test/optuna_study.log"
+        )
+    )
+
+    study = optuna.create_study(
+        study_name="test",
+        storage=storage,
+        direction="maximize",
+        load_if_exists=True,
+        sampler=samplers.TPESampler(
+            multivariate=True,
+            group=True,
+            constant_liar=True,
+            n_startup_trials=10,
+        ),
+        pruner=pruners.HyperbandPruner(
+            min_resource=10,
+        ),
+    )
+
+    study.optimize(
+        partial(
+            lejepa_hyperparam_objective, metric_to_trace="probe/realbogus_logistic_auc"
+        ),
+        n_trials=50,
+        gc_after_trial=True,
+    )

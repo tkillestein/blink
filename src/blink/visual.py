@@ -98,7 +98,9 @@ def zscale_interval_norm(
     rescale_difference: bool = True,
 ) -> np.ndarray:
 
-    vmin, vmax = ZScaleInterval(contrast=contrast).get_limits(input_stamp)
+    vmin, vmax = ZScaleInterval(contrast=contrast).get_limits(
+        input_stamp.astype("float") # Cast needed in case we have float16 type
+    )
     scaled_stamp = input_stamp - vmin / (vmax - vmin)
 
     if rescale_difference:

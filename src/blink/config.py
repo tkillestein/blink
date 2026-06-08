@@ -48,6 +48,12 @@ class BlinkSettings(BaseSettings):
         description="W&B API key",
     )
 
+    postgres_user: str | None = None
+    postgres_password: SecretStr | None = None
+    postgres_db: str | None = None
+    postgres_port: int | None = 5432
+    postgres_host: str | None = "localhost"
+
 
 # --------------------------------------------------------------------------------------
 # Base models

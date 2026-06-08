@@ -296,7 +296,7 @@ class WebDatasetIngestPipeline:
     def read_manifest(self) -> pl.DataFrame:
         logger.info(f"Reading manifest from {self.cfg.manifest_path}")
 
-        manifest = pl.read_csv(self.cfg.manifest_path, try_parse_dates=True)[:10]
+        manifest = pl.read_csv(self.cfg.manifest_path, try_parse_dates=True)
 
         logger.info(f"Found {manifest.shape[0]} sources to ingest")
         return manifest

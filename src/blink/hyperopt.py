@@ -2,10 +2,9 @@ from functools import partial
 from pathlib import Path
 
 import optuna
-from optuna import pruners, samplers
+from optuna import samplers
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
-from optuna_integration import PyTorchLightningPruningCallback
 
 from blink.config import (
     AugmentationConfig,
@@ -23,8 +22,6 @@ MAX_EPOCHS = 50
 
 
 def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> float:
-
-    lightning_cb = PyTorchLightningPruningCallback(trial=trial, monitor=metric_to_trace)
 
     weight_decay = trial.suggest_float("weight_decay", 1e-5, 0.05, log=True)
     base_lr = trial.suggest_float("learning_rate", low=1e-5, high=1e-3, log=True)
@@ -61,7 +58,6 @@ def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> fl
 
     result = pretrain(
         config=populated_config,
-        extra_callbacks=[lightning_cb],
         emit_metrics=metric_to_trace,
     )
 
@@ -90,9 +86,6 @@ if __name__ == "__main__":
             constant_liar=True,
             n_startup_trials=10,
         ),
-        pruner=pruners.HyperbandPruner(
-            min_resource=10,
-        ),
     )
 
     study.optimize(
@@ -100,5 +93,4 @@ if __name__ == "__main__":
             lejepa_hyperparam_objective, metric_to_trace="probe/realbogus_logistic_auc"
         ),
         n_trials=50,
-        gc_after_trial=True,
     )

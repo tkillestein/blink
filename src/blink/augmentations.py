@@ -35,11 +35,17 @@ class SmartPSFBlur(T.Transform):
 class BaseTransform:
     def __init__(
         self,
+        channel_means: list[float],
+        channel_stds: list[float],
     ) -> None:
+        self.channel_stds = channel_stds
+        self.channel_means = channel_means
+
         self.transform = T.Compose(
             [
                 T.ToImage(),
                 T.ToDtype(torch.float32, scale=True),
+                T.Normalize(mean=self.channel_means, std=self.channel_stds),
             ]
         )
 
@@ -111,9 +117,6 @@ class MultiCropTransform:
         views = [self.global_transform(x) for _ in range(self.cfg.n_global)]
         views += [self.local_transform(x) for _ in range(self.cfg.n_local)]
         return views
-
-
-BASE_TRANSFORM = BaseTransform()
 
 
 def multicrop_collate_img(batch: list[list[torch.Tensor]]) -> list[torch.Tensor]:

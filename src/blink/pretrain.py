@@ -11,7 +11,6 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.trainer import Trainer
 
 from blink.augmentations import (
-    BASE_TRANSFORM,
     MultiCropTransform,
 )
 from blink.config import LeJEPAPretrainConfig
@@ -48,7 +47,6 @@ def pretrain(
 
     datamodule = TrainWebDatasetModule(
         data_config=config.data,
-        cpu_transform=BASE_TRANSFORM,
         gpu_transform=augmenter,
     )
 

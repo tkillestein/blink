@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader, Dataset
 from webdataset.compat import WebDataset
 from webdataset.shardlists import split_by_node, split_by_worker
 
-from blink.augmentations import BASE_TRANSFORM
+from blink.augmentations import BaseTransform
 from blink.config import (
     BlinkSettings,
     DataConfig,
@@ -45,16 +45,19 @@ class TrainWebDatasetModule(LightningDataModule):
         self,
         data_config: DataConfig,
         gpu_transform: Callable,
-        cpu_transform: Callable = BASE_TRANSFORM,
     ) -> None:
         super().__init__()
 
-        self.cpu_transform = cpu_transform
         self.data_config = data_config
         self.gpu_transform = gpu_transform
 
         dataset_metadata = ETLResultConfig.from_toml(
             self.data_config.data_dir / WEBDATASET_STORE / "dataset_info.toml"
+        )
+
+        self.cpu_transform = BaseTransform(
+            channel_means=dataset_metadata.channel_means,
+            channel_stds=dataset_metadata.channel_stds,
         )
 
         self.total_stamps = dataset_metadata.num_stamps
@@ -170,6 +173,27 @@ class WebDatasetIngestPipeline:
         self._means = np.zeros((self.cfg.num_layers,), dtype="float64")
         self._M2 = np.zeros((self.cfg.num_layers,), dtype="float64")
 
+    def update_batch_statistics(self, stamp_batch: np.ndarray) -> None:
+        _n, _c, _h, _w = stamp_batch.shape
+        batch_pixel_count = _n * _h * _w
+
+        old_means = self._means.copy()
+
+        # Welford streaming mean-variance estimator, adjusted to count over images
+        self._pixel_count += batch_pixel_count
+        batch_means = np.mean(stamp_batch, axis=(0, 2, 3))
+        self._means += (batch_pixel_count / self._pixel_count) * (
+            batch_means - old_means
+        )
+
+        old_means_v = old_means.reshape(1, _c, 1, 1)
+        new_means_v = self._means.reshape(1, _c, 1, 1)
+
+        self._M2 += np.sum(
+            (stamp_batch - old_means_v) * (stamp_batch - new_means_v),
+            axis=(0, 2, 3),
+        )
+
     def ingest(self) -> None:
         logger.info(f"Beginning ingest as WebDataset: saving data to {self.write_path}")
         start = perf_counter()
@@ -195,15 +219,7 @@ class WebDatasetIngestPipeline:
                     # Cast directly to desired output dtype
                     processed = processed.astype(self.cfg.dtype)
 
-                    _n, _c, _h, _w = processed.shape[0]
-                    self._pixel_count += _n * _h * _w
-                    old_means = self._means
-
-                    self._means += np.mean(processed - old_means, axis=(0, 2, 3))
-                    self._M2 += np.sum(
-                        (processed - old_means) * (processed - self._means),
-                        axis=(0, 2, 3),
-                    )
+                    self.update_batch_statistics(processed)
 
                     for stamp, meta in zip(processed, metadata, strict=True):
                         stamp_id = meta[STAMP_INDEX_NAME]
@@ -280,7 +296,7 @@ class WebDatasetIngestPipeline:
     def read_manifest(self) -> pl.DataFrame:
         logger.info(f"Reading manifest from {self.cfg.manifest_path}")
 
-        manifest = pl.read_csv(self.cfg.manifest_path, try_parse_dates=True)
+        manifest = pl.read_csv(self.cfg.manifest_path, try_parse_dates=True)[:10]
 
         logger.info(f"Found {manifest.shape[0]} sources to ingest")
         return manifest
@@ -303,11 +319,11 @@ class WebDatasetIngestPipeline:
 
     @property
     def dataset_variance(self) -> np.ndarray:
-        return self._M2 / (self.stamp_count - 1)
+        return self._M2 / (self._pixel_count - 1)
 
     @property
     def dataset_stddev(self) -> np.ndarray:
-        return np.sqrt(self._M2 / (self.stamp_count - 1))
+        return np.sqrt(self._M2 / (self._pixel_count - 1))
 
 
 def ingest_single_frame(

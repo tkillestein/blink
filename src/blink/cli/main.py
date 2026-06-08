@@ -9,7 +9,7 @@ from rich.syntax import Syntax
 
 console = Console()
 
-_VERBOSITY = {0: "WARNING", 1: "INFO", 2: "DEBUG"}
+_VERBOSITY = {0: "INFO", 1: "DEBUG"}
 _JOB_TYPES = ["pretrain", "etl", "manifest"]
 
 
@@ -125,6 +125,11 @@ def init(job_type: str) -> None:
             config = LeJEPAPretrainConfig.empty()
         case "etl":
             config = ETLConfig.empty()
+
+            if matches := sorted(config.output_dir.glob("*.zst")):
+                logger.info(f"Automatically identified {matches[0]} as manifest file")
+                config.manifest_path = matches[0]
+
         case "manifest":
             config = ManifestConfig.empty()
         case _:

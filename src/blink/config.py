@@ -13,6 +13,7 @@ from pydantic import (
     PostgresDsn,
     RootModel,
     SecretStr,
+    SkipValidation,
     computed_field,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -347,17 +348,17 @@ class ETLConfig(TOMLExportableModel):
         "float16",
         description="Dtype to use with zarr storage backend",
     )
-    shard_size: float = Field(
-        1e9, description="Target shard size for WebDataset shards"
+    shard_size: int = Field(
+        1_000_000_000, description="Target shard size for WebDataset shards"
     )
-    num_processes: int = Field(
+    num_processes: SkipValidation[int] = Field(
         default=PHYSICAL_CORES // 2,
         le=PHYSICAL_CORES,
         ge=0,
         description="Number of processes to use",
     )
     preprocessor: PreprocessorDiscrim = Field(
-        default_factory=PercentileAsinhNorm,
+        default_factory=ZScaleIntervalNorm,
         description="Stamp scaler to use",
     )
 
@@ -376,7 +377,7 @@ class ETLConfig(TOMLExportableModel):
 
     @classmethod
     def empty(cls) -> "ETLConfig":
-        return cls.model_construct(preprocessor=PercentileAsinhNorm.empty())
+        return cls.model_construct(preprocessor=ZScaleIntervalNorm.empty())
 
 
 class ManifestConfig(TOMLExportableModel):

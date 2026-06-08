@@ -125,7 +125,6 @@ class WebDatasetIngestPipeline:
         stamps and metadata. Quickly!
         """
         self.cfg = etl_config
-        self._count = 0
 
         logger.info(f"Creating worker pool with {self.cfg.num_processes} processes")
         self.executor_pool = ProcessPoolExecutor(
@@ -163,6 +162,14 @@ class WebDatasetIngestPipeline:
             for shard_idx in range(self.num_shards)
         ]
 
+        # Initialise online statistics variables
+        self.stamp_count = 0
+
+        # Setup for Welford online mean-variance estimation
+        self._pixel_count = np.zeros((self.cfg.num_layers,), dtype="int64")
+        self._means = np.zeros((self.cfg.num_layers,), dtype="float64")
+        self._M2 = np.zeros((self.cfg.num_layers,), dtype="float64")
+
     def ingest(self) -> None:
         logger.info(f"Beginning ingest as WebDataset: saving data to {self.write_path}")
         start = perf_counter()
@@ -188,6 +195,16 @@ class WebDatasetIngestPipeline:
                     # Cast directly to desired output dtype
                     processed = processed.astype(self.cfg.dtype)
 
+                    _n, _c, _h, _w = processed.shape[0]
+                    self._pixel_count += _n * _h * _w
+                    old_means = self._means
+
+                    self._means += np.mean(processed - old_means, axis=(0, 2, 3))
+                    self._M2 += np.sum(
+                        (processed - old_means) * (processed - self._means),
+                        axis=(0, 2, 3),
+                    )
+
                     for stamp, meta in zip(processed, metadata, strict=True):
                         stamp_id = meta[STAMP_INDEX_NAME]
                         buf = io.BytesIO()
@@ -203,12 +220,12 @@ class WebDatasetIngestPipeline:
                                 "meta.json": meta,
                             }
                         )
-                        self._count += 1
+                        self.stamp_count += 1
 
-                    if self._count % 100 == 0:
-                        perc_complete = self._count / self.manifest.height * 100
+                    if self.stamp_count % 100 == 0:
+                        perc_complete = self.stamp_count / self.manifest.height * 100
                         logger.info(
-                            f"{self._count} of "
+                            f"{self.stamp_count} of "
                             f"{self.manifest.height} ({perc_complete:.1f}%) "
                             f"stamps completed"
                         )
@@ -233,19 +250,25 @@ class WebDatasetIngestPipeline:
 
         runtime = end - start
 
-        logger.info(f"Total stamps in dataset: {self._count}")
+        logger.info(f"Total stamps in dataset: {self.stamp_count}")
         logger.info(f"Total runtime: {runtime:.1f} seconds")
-        logger.info(f"Effective throughput: {self._count / runtime:.1f} stamps/sec")
+        logger.info(
+            f"Effective throughput: {self.stamp_count / runtime:.1f} stamps/sec"
+        )
         logger.info(
             f"Effective throughput (per process): "
-            f"{self._count / runtime / self.cfg.num_processes:.1f} "
+            f"{self.stamp_count / runtime / self.cfg.num_processes:.1f} "
             f"stamps/sec/process",
         )
 
         dataspec_path = self.write_path / "dataset_info.toml"
 
         spec_out = ETLResultConfig(
-            etl_config=self.cfg, num_stamps=self._count, shard_count=self.num_shards
+            etl_config=self.cfg,
+            num_stamps=self.stamp_count,
+            shard_count=self.num_shards,
+            channel_means=list(self.dataset_mean),
+            channel_stds=list(self.dataset_stddev),
         )
 
         spec_out.write_toml(dataspec_path)
@@ -273,6 +296,18 @@ class WebDatasetIngestPipeline:
         _config = ETLConfig.from_toml(config_path)
 
         return cls(etl_config=_config)
+
+    @property
+    def dataset_mean(self) -> np.ndarray:
+        return self._means
+
+    @property
+    def dataset_variance(self) -> np.ndarray:
+        return self._M2 / (self.stamp_count - 1)
+
+    @property
+    def dataset_stddev(self) -> np.ndarray:
+        return np.sqrt(self._M2 / (self.stamp_count - 1))
 
 
 def ingest_single_frame(

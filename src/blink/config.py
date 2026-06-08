@@ -129,7 +129,9 @@ class ViTConfig(TOMLExportableModel):
     model_type: Literal["vit"] = "vit"
     model_name: str = "vit_tiny_patch16_224"
     patch_size: NonNegativeInt = 8
+    depth: NonNegativeInt = 12
     embed_dim: NonNegativeInt = 243
+    num_heads: NonNegativeInt = 3
 
     def build(self) -> nn.Module:
         """Build any transformer model from `timm`"""
@@ -421,3 +423,7 @@ class ETLResultConfig(TOMLExportableModel):
     created_at: datetime = Field(default_factory=grab_timestamp)
     blink_version: str = Field(default=blink_version)
     shard_count: NonNegativeInt
+
+    # Optionals for rescaling
+    channel_means: list[float] = [0.0, 0.0, 0.0]
+    channel_stds: list[float] = [1.0, 1.0, 1.0]

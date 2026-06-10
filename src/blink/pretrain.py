@@ -39,7 +39,7 @@ def pretrain(
     probe_callback = ModelProbeCallback(
         cfg=config,
         probe_labels=["mag", "realbogus"],
-        probe_size=2000,
+        probe_size=5000,
         every_n_epochs=1,
     )
 

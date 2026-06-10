@@ -8,7 +8,6 @@ from lightning import LightningModule, Trainer
 from lightning.pytorch import Callback
 from loguru import logger
 from sklearn.linear_model import LogisticRegressionCV, RidgeCV
-from sklearn.metrics import r2_score
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from webdataset.compat import WebDataset
@@ -21,9 +20,10 @@ class ModelProbeCallback(Callback):
         self,
         cfg: LeJEPAPretrainConfig,
         probe_labels: Sequence[str],
-        probe_size: int = 2000,
+        probe_size: int = 5000,
         every_n_epochs: int = 3,
         classification_targets: tuple[str, ...] = ("realbogus",),
+        cv_folds: int = 5,
     ) -> None:
         self.probe_labels = probe_labels
         self.classification_targets = classification_targets
@@ -32,6 +32,7 @@ class ModelProbeCallback(Callback):
         self.every_n_epochs = every_n_epochs
         self.cfg = cfg
         self.probe_size = probe_size
+        self.cv_folds = cv_folds
 
     def on_fit_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
 
@@ -96,9 +97,10 @@ class ModelProbeCallback(Callback):
         for target_name, target_val in targets.items():
             if target_name in self.classification_targets:
                 threshold_point = 0.5
+
                 binarised_labels = target_val > threshold_point
 
-                classifier_probe = LogisticRegressionCV(
+                base_lr_classifier = LogisticRegressionCV(
                     Cs=alpha_range,
                     scoring="roc_auc",
                     l1_ratios=(0.0,),
@@ -109,10 +111,14 @@ class ModelProbeCallback(Callback):
                     verbose=0,
                 )
 
-                classifier_probe.fit(X=embeddings, y=binarised_labels)
-                score = classifier_probe.score(X=embeddings, y=binarised_labels)
+                scores = cross_val_score(
+                    estimator=base_lr_classifier,
+                    X=embeddings,
+                    y=binarised_labels,
+                    cv=self.cv_folds,
+                )
 
-                pl_module.log(f"probe/{target_name}_logistic_auc", score)
+                pl_module.log(f"probe/{target_name}_logistic_auc", scores.mean())
 
                 # K-neighbours
                 base_clf = KNeighborsClassifier(n_neighbors=3)
@@ -122,6 +128,8 @@ class ModelProbeCallback(Callback):
                     y=binarised_labels,
                     n_jobs=-1,
                     scoring="roc_auc",
+                    verbose=0,
+                    cv=self.cv_folds,
                 )
                 pl_module.log(f"probe/{target_name}_knn_auc", cv_score.mean())
             else:
@@ -129,14 +137,20 @@ class ModelProbeCallback(Callback):
                 linear_probe = RidgeCV(
                     alphas=alpha_range,
                     scoring="r2",
-                    cv=None,  # Use GCV
+                    cv=None,  # Use GCV to tune alpha internally
                 )
 
-                linear_probe.fit(embeddings, target_val)
-                predictions = linear_probe.predict(embeddings)
+                scores = cross_val_score(
+                    estimator=linear_probe,
+                    X=embeddings,
+                    y=target_val,
+                    cv=self.cv_folds,
+                    scoring="r2",
+                )
 
                 pl_module.log(
-                    f"probe/{target_name}_linear_r2", r2_score(target_val, predictions)
+                    f"probe/{target_name}_linear_r2",
+                    scores.mean(),
                 )
 
                 # KNN probe
@@ -147,5 +161,6 @@ class ModelProbeCallback(Callback):
                     y=target_val,
                     n_jobs=-1,
                     scoring="r2",
+                    cv=self.cv_folds,
                 )
                 pl_module.log(f"probe/{target_name}_knn_r2", cv_score.mean())

@@ -18,7 +18,11 @@ from blink.config import (
 )
 from blink.pretrain import pretrain
 
-MAX_EPOCHS = 50
+MAX_EPOCHS = 25
+ROOT_EXPERIMENT_DIR = Path(
+    "/springbrook/share/physics/phsrcc/blink_data/resnet_sweep_25epochs"
+)
+GROUP_NAME = "2026-06-11_resnet_sweep"
 
 
 def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> float:
@@ -35,13 +39,13 @@ def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> fl
     )
 
     backbone = CNNConfig(
-        model_name="convnext_atto",
+        model_name="resnet18d",
         embed_dim=embedding_dim,
     )
 
     data = DataConfig(
         batch_size=batch_size,
-        data_dir=Path("/springbrook/share/physics/phsrcc/blink_data/hyperopt_test"),
+        data_dir=Path(ROOT_EXPERIMENT_DIR),
     )
 
     loss = JEPALossConfig()
@@ -70,9 +74,7 @@ def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> fl
 
 if __name__ == "__main__":
     storage = JournalStorage(
-        JournalFileBackend(
-            file_path="/springbrook/share/physics/phsrcc/blink_data/hyperopt_test/optuna_study.log"
-        )
+        JournalFileBackend(file_path=str(ROOT_EXPERIMENT_DIR / "study.log"))
     )
 
     study = optuna.create_study(
@@ -92,5 +94,5 @@ if __name__ == "__main__":
         partial(
             lejepa_hyperparam_objective, metric_to_trace="probe/realbogus_logistic_auc"
         ),
-        n_trials=50,
+        n_trials=100,
     )

@@ -31,6 +31,7 @@ def pretrain(
     verbose: int = 2,
     extra_callbacks: list[Any] | None = None,
     emit_metrics: str | None = "probe/realbogus_logistic_auc",
+    group_name: str | None = None,
 ) -> float | None:
 
     if extra_callbacks is None:
@@ -86,6 +87,7 @@ def pretrain(
                 project="blink",
                 name=config.experiment.experiment_name,
                 save_dir=log_dir,
+                group=group_name,
             ),
         ],
         enable_progress_bar=False,

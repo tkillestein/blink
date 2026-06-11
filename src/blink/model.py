@@ -107,29 +107,25 @@ class LeJEPAPretrainer(LightningModule):
             weight_decay=self.cfg.optim.weight_decay,
         )
 
-        # Pin minimum LR at 1% of peak
-        lr_min = scaled_lr * 0.01
-
-        # Warm-up amounts to 5% of total epochs
         total_epochs = self.cfg.optim.max_epochs
         warmup_epochs = max(5, int(total_epochs * 0.05))
 
-        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs
-        )
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=total_epochs - warmup_epochs, eta_min=lr_min
-        )
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            schedulers=[warmup_scheduler, cosine_scheduler],
-            milestones=[warmup_epochs],
+            max_lr=scaled_lr,
+            total_steps=int(self.trainer.estimated_stepping_batches),
+            pct_start=warmup_epochs / total_epochs,  # warm-up fraction matches original
+            anneal_strategy="cos",  # cosine decay, matches original
+            div_factor=10.0,  # start at max_lr / 10  (≈ start_factor=0.1)
+            final_div_factor=100.0,  # end at max_lr / 1000... see note below
         )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
+                "interval": "step",  # <-- per-batch stepping
+                "frequency": 1,
             },
         }
 

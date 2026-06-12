@@ -1,7 +1,7 @@
+import gc
 from typing import Any
 
 import torch
-import wandb
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -9,6 +9,7 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.trainer import Trainer
+from loguru import logger
 
 from blink.augmentations import (
     MultiCropTransform,
@@ -30,9 +31,19 @@ def pretrain(
     config: LeJEPAPretrainConfig,
     verbose: int = 2,
     extra_callbacks: list[Any] | None = None,
-    emit_metrics: str | None = "probe/realbogus_logistic_auc",
+    emit_metric: str | None = "probe/realbogus_logistic_auc",
     group_name: str | None = None,
 ) -> float | None:
+
+    checkpoint_dir = config.output_dir / "checkpoints"
+    log_dir = config.output_dir / "logs"
+
+    wandb_logger = WandbLogger(
+        project="blink",
+        name=config.experiment.experiment_name,
+        save_dir=log_dir,
+        group=group_name,
+    )
 
     if extra_callbacks is None:
         extra_callbacks = []
@@ -54,9 +65,6 @@ def pretrain(
     model = LeJEPAPretrainer(config)
 
     _verbose_output = verbose > 0
-
-    checkpoint_dir = config.output_dir / "checkpoints"
-    log_dir = config.output_dir / "logs"
 
     trainer = Trainer(
         max_epochs=config.optim.max_epochs,
@@ -82,14 +90,7 @@ def pretrain(
             probe_callback,
             *extra_callbacks,
         ],
-        logger=[
-            WandbLogger(
-                project="blink",
-                name=config.experiment.experiment_name,
-                save_dir=log_dir,
-                group=group_name,
-            ),
-        ],
+        logger=wandb_logger,
         enable_progress_bar=False,
         enable_model_summary=False,
         profiler="simple",
@@ -101,9 +102,16 @@ def pretrain(
         weights_only=False,
     )
 
-    wandb.finish()
+    try:
+        return (
+            float(trainer.callback_metrics[emit_metric].item()) if emit_metric else None
+        )
 
-    if emit_metrics:
-        return float(trainer.callback_metrics[emit_metrics].item())
-
-    return None
+    finally:
+        logger.info("Tearing down experiment")
+        wandb_logger.experiment.finish()
+        trainer.strategy.teardown()
+        del trainer
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()

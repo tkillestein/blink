@@ -22,7 +22,7 @@ MAX_EPOCHS = 25
 ROOT_EXPERIMENT_DIR = Path(
     "/springbrook/share/physics/phsrcc/blink_data/resnet_sweep_25epochs"
 )
-GROUP_NAME = "2026-06-11_resnet_sweep"
+GROUP_NAME = "2026-06-12_resnet_sweep"
 
 
 def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> float:
@@ -62,7 +62,8 @@ def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> fl
 
     result = pretrain(
         config=populated_config,
-        emit_metrics=metric_to_trace,
+        emit_metric=metric_to_trace,
+        group_name=GROUP_NAME,
     )
 
     if result is None:

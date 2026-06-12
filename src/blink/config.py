@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 import rtoml
+from loguru import logger
 from numpy import ndarray
 from pydantic import (
     BaseModel,
@@ -141,6 +142,7 @@ class ViTConfig(TOMLExportableModel):
 
     def build(self) -> nn.Module:
         """Build any transformer model from `timm`"""
+        logger.debug(f"Building model `{self.model_name}` from config")
         import timm
 
         return timm.create_model(
@@ -158,12 +160,13 @@ class CNNConfig(TOMLExportableModel):
     """Config class for CNN models."""
 
     model_type: Literal["cnn"] = "cnn"
-    model_name: str = "convnext_atto"
+    model_name: str = "resnet18d"
 
     embed_dim: NonNegativeInt = 256
 
     def build(self) -> nn.Module:
         """Build any CNN-family model from `timm`"""
+        logger.debug(f"Building model `{self.model_name}` from config")
         import timm
 
         return timm.create_model(

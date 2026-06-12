@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 
 import optuna
+from loguru import logger
 from optuna import samplers
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
@@ -74,6 +75,7 @@ def lejepa_hyperparam_objective(trial: optuna.Trial, metric_to_trace: str) -> fl
 
 
 if __name__ == "__main__":
+    logger.info(f"Beginning hyperparameter optimization for {GROUP_NAME}")
     storage = JournalStorage(
         JournalFileBackend(file_path=str(ROOT_EXPERIMENT_DIR / "study.log"))
     )
@@ -95,5 +97,5 @@ if __name__ == "__main__":
         partial(
             lejepa_hyperparam_objective, metric_to_trace="probe/realbogus_logistic_auc"
         ),
-        n_trials=100,
+        n_trials=50,
     )

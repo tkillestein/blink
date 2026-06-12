@@ -18,6 +18,7 @@ class LeJEPAPretrainer(LightningModule):
     ) -> None:
         super().__init__()
 
+        logger.debug("Initialising LeJEPAPretrainer from config")
         if config is None:
             logger.debug("Loading config from JSON if exists")
             config = (
@@ -28,6 +29,7 @@ class LeJEPAPretrainer(LightningModule):
 
         self.cfg = config
 
+        logger.debug("Saving hyperparameters to logger")
         self.save_hyperparameters(
             {
                 "config_json": self.cfg.model_dump_json(),
@@ -98,8 +100,11 @@ class LeJEPAPretrainer(LightningModule):
         return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
-
+        logger.debug("Configuring optimisers")
         scaled_lr = self.cfg.optim.learning_rate * (self.cfg.data.batch_size / 256)
+        logger.debug(
+            f"Base LR: {self.cfg.optim.learning_rate:.2e} -> Scaled LR: {scaled_lr:.2e}"
+        )
 
         optimizer = torch.optim.AdamW(
             self.parameters(),
@@ -109,6 +114,11 @@ class LeJEPAPretrainer(LightningModule):
 
         total_epochs = self.cfg.optim.max_epochs
         warmup_epochs = max(5, int(total_epochs * 0.05))
+
+        logger.debug(
+            f"Learning rate schedule: {warmup_epochs} epoch warmup."
+            f" Total {total_epochs} epochs."
+        )
 
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,

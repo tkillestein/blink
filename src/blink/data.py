@@ -51,6 +51,8 @@ class TrainWebDatasetModule(LightningDataModule):
         self.data_config = data_config
         self.gpu_transform = gpu_transform
 
+        logger.info(f"Building WebDataset from {self.data_config.data_dir}")
+
         dataset_metadata = ETLResultConfig.from_toml(
             self.data_config.data_dir / WEBDATASET_STORE / "dataset_info.toml"
         )
@@ -61,6 +63,8 @@ class TrainWebDatasetModule(LightningDataModule):
         )
 
         self.total_stamps = dataset_metadata.num_stamps
+        logger.info(f"Found {self.total_stamps} stamps in dataset")
+
         self.batch_size = data_config.batch_size
 
         self.array_shape = (

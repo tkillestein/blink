@@ -2,6 +2,7 @@ import gc
 from typing import Any
 
 import torch
+import wandb
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -38,6 +39,7 @@ def pretrain(
     checkpoint_dir = config.output_dir / "checkpoints"
     log_dir = config.output_dir / "logs"
 
+    logger.debug("Initializing W&B sink")
     wandb_logger = WandbLogger(
         project="blink",
         name=config.experiment.experiment_name,
@@ -51,7 +53,7 @@ def pretrain(
     probe_callback = ModelProbeCallback(
         cfg=config,
         probe_labels=["mag", "realbogus"],
-        probe_size=5000,
+        probe_size=2000,
         every_n_epochs=1,
     )
 
@@ -109,7 +111,9 @@ def pretrain(
 
     finally:
         logger.info("Tearing down experiment")
-        wandb_logger.experiment.finish()
+        wandb_logger.experiment.finish()  # Suspect this is a no-op
+        wandb.finish()
+
         trainer.strategy.teardown()
         del trainer
         del model
